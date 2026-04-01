@@ -4,6 +4,10 @@ const { getDB } = require('../config/db');
 let socketIoInstance = null;
 let isWatching = false;
 
+// Keep last 50 messages in memory for late Admin UI clients
+const messageBuffer = [];
+const MAX_BUFFER_SIZE = 50;
+
 /**
  * Starts the Test Message Watcher and emits events to Admin UI.
  * @param {import('socket.io').Server} io
@@ -20,10 +24,22 @@ async function startTestMessageWatcher(io) {
     isWatching = true;
 
     try {
+        // Watch for new inserts in 'testing' collection
         const changeStream = testingCollection.watch(
             [{ $match: { operationType: 'insert' } }],
             { fullDocument: 'updateLookup' }
         );
+
+        // Emit messages to /admin namespace
+        const adminNamespace = socketIoInstance.of('/admin');
+
+        // Send buffered messages to newly connected Admin UI clients
+        adminNamespace.on('connection', (socket) => {
+            console.log(`✅ Admin UI connected: ${socket.id}`);
+            if (messageBuffer.length > 0) {
+                socket.emit('bulk_test_messages', messageBuffer);
+            }
+        });
 
         changeStream.on('change', (change) => {
             const doc = change.fullDocument;
@@ -36,16 +52,20 @@ async function startTestMessageWatcher(io) {
                 timestamp: doc.created_at || new Date()
             };
 
-            // Emit to /admin namespace for Admin UI
-            socketIoInstance.of('/admin').emit('test_message_received', payload);
-            console.log(`📩 Test message emitted to Admin UI: ${doc.text}`);
+            // Save in buffer
+            messageBuffer.push(payload);
+            if (messageBuffer.length > MAX_BUFFER_SIZE) {
+                messageBuffer.shift();
+            }
+
+            // Emit to all connected Admin UI clients
+            adminNamespace.emit('test_message_received', payload);
+            console.log(`📩 Test message emitted: ${doc.text}`);
         });
 
         changeStream.on('error', (err) => {
             console.error("❌ Watcher Error:", err);
             isWatching = false;
-
-            // Attempt reconnect after 5 seconds
             setTimeout(() => startTestMessageWatcher(socketIoInstance), 5000);
         });
 
