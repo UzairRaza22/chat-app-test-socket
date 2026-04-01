@@ -17,7 +17,7 @@ async function startTestMessageWatcher(io) {
     if (io) socketIoInstance = io;
 
     const db = getDB();
-    const testingCollection = db.collection('testing');
+    const testingCollection = db.collection('whistle_it');
 
     console.log("🔍 Starting Test Message Watcher for Admin UI...");
 
