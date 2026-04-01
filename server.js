@@ -12,18 +12,13 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
     cors: {
-        origin: "*",
+        origin: "*", // allow all origins for testing
         credentials: true
     }
 });
 
 global.io = io;
 app.use(express.json());
-
-// Serve Socket Admin UI
-app.use('/socket-admin', express.static(
-    path.join(__dirname, 'node_modules/@socket.io/admin-ui/ui/dist')
-));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -34,26 +29,35 @@ app.get('/health', (req, res) => {
     });
 });
 
-// Socket Admin UI
+// Socket Admin UI (served from Node for local testing if needed)
+app.use('/socket-admin', express.static(
+    path.join(__dirname, 'node_modules/@socket.io/admin-ui/ui/dist')
+));
+
+// Enable Admin UI instrumentation
 instrument(io, {
     auth: false,
     mode: "development"
 });
 
+// Socket connection
 io.on('connection', (socket) => {
     console.log(`✅ Client Connected: ${socket.id}`);
+
     socket.on('disconnect', () => {
         console.log(`❌ Client Disconnected: ${socket.id}`);
     });
 });
 
+// Start MongoDB watcher and server
 async function startServer() {
     try {
         await connectDB();
         await startTestMessageWatcher(io);
+
         const PORT = process.env.PORT || 3013;
         server.listen(PORT, '0.0.0.0', () => {
-            console.log(`🚀 Test Socket Server running on http://localhost:${PORT}`);
+            console.log(`🚀 Socket Server running on http://0.0.0.0:${PORT}`);
         });
     } catch (error) {
         console.error("Fatal startup error:", error);
