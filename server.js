@@ -10,9 +10,10 @@ const { startTestMessageWatcher } = require('./src/watchers/testMessageWatcher')
 const app = express();
 const server = http.createServer(app);
 
+// Create Socket.IO server with CORS
 const io = new Server(server, {
     cors: {
-        origin: "*", // allow all origins for testing
+        origin: "*", // allow all origins
         credentials: true
     }
 });
@@ -29,23 +30,31 @@ app.get('/health', (req, res) => {
     });
 });
 
-// Socket Admin UI (served from Node for local testing if needed)
+// Serve Admin UI static files
 app.use('/socket-admin', express.static(
     path.join(__dirname, 'node_modules/@socket.io/admin-ui/ui/dist')
 ));
 
-// Enable Admin UI instrumentation
+// Admin UI instrumentation
 instrument(io, {
     auth: false,
     mode: "development"
 });
 
-// Socket connection
+// Default namespace for regular clients
 io.on('connection', (socket) => {
     console.log(`✅ Client Connected: ${socket.id}`);
-
     socket.on('disconnect', () => {
         console.log(`❌ Client Disconnected: ${socket.id}`);
+    });
+});
+
+// Create /admin namespace for Admin UI monitoring
+const adminNamespace = io.of('/admin');
+adminNamespace.on('connection', (socket) => {
+    console.log(`🛠 Admin UI Connected: ${socket.id}`);
+    socket.on('disconnect', () => {
+        console.log(`🛑 Admin UI Disconnected: ${socket.id}`);
     });
 });
 
@@ -53,11 +62,12 @@ io.on('connection', (socket) => {
 async function startServer() {
     try {
         await connectDB();
-        await startTestMessageWatcher(io);
+        await startTestMessageWatcher(io); // emits to /admin namespace
 
         const PORT = process.env.PORT || 3013;
         server.listen(PORT, '0.0.0.0', () => {
             console.log(`🚀 Socket Server running on http://0.0.0.0:${PORT}`);
+            console.log(`🛠 Admin UI available at http://<your-ip>/test-socket/socket-admin/index.html`);
         });
     } catch (error) {
         console.error("Fatal startup error:", error);
