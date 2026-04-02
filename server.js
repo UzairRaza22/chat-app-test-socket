@@ -10,10 +10,9 @@ const { startTestMessageWatcher } = require('./src/watchers/testMessageWatcher')
 const app = express();
 const server = http.createServer(app);
 
-// Create Socket.IO server with CORS
 const io = new Server(server, {
     cors: {
-        origin: "*", // allow all origins
+        origin: "*",
         credentials: true
     }
 });
@@ -41,33 +40,44 @@ instrument(io, {
     mode: "development"
 });
 
-// Default namespace for regular clients
+// Main namespace — handles frontend clients
 io.on('connection', (socket) => {
     console.log(`✅ Client Connected: ${socket.id}`);
+
+    // When a user is typing — broadcast to everyone else
+    socket.on('typing', (data) => {
+        socket.broadcast.emit('user_typing', {
+            sender_id: data.sender_id,
+            isTyping: data.isTyping
+        });
+        console.log(`✍️  ${data.sender_id} is ${data.isTyping ? 'typing' : 'stopped typing'}`);
+    });
+
+    // When a message is sent directly via socket (instant delivery)
+    socket.on('send_message', (data) => {
+        // Broadcast to all OTHER connected clients
+        socket.broadcast.emit('message_received', {
+            text: data.text,
+            sender_id: data.sender_id,
+            timestamp: new Date().toISOString()
+        });
+        console.log(`📨 Message from ${data.sender_id}: ${data.text}`);
+    });
+
     socket.on('disconnect', () => {
         console.log(`❌ Client Disconnected: ${socket.id}`);
     });
 });
 
-// Create /admin namespace for Admin UI monitoring
-const adminNamespace = io.of('/admin');
-adminNamespace.on('connection', (socket) => {
-    console.log(`🛠 Admin UI Connected: ${socket.id}`);
-    socket.on('disconnect', () => {
-        console.log(`🛑 Admin UI Disconnected: ${socket.id}`);
-    });
-});
-
-// Start MongoDB watcher and server
+// Start server
 async function startServer() {
     try {
         await connectDB();
-        await startTestMessageWatcher(io); // emits to /admin namespace
+        await startTestMessageWatcher(io);
 
         const PORT = process.env.PORT || 3013;
         server.listen(PORT, '0.0.0.0', () => {
             console.log(`🚀 Socket Server running on http://0.0.0.0:${PORT}`);
-            console.log(`🛠 Admin UI available at http://<your-ip>/test-socket/socket-admin/index.html`);
         });
     } catch (error) {
         console.error("Fatal startup error:", error);
